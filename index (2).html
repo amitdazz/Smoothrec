@@ -1,0 +1,836 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<title>SmoothRec: screen recordings that zoom in on their own</title>
+<meta name="description" content="SmoothRec is a Chrome extension that records a tab and zooms in on your clicks and typing automatically. Download the video or share a link.">
+<meta property="og:title" content="SmoothRec: screen recordings that zoom in on their own">
+<meta property="og:description" content="Record a Chrome tab and get a finished video with smooth auto-zoom. Save it as a file or send a link.">
+<meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='28' fill='%232548E2'/><g fill='none' stroke='%23fff' stroke-width='8'><path d='M30 52V32h20'/><path d='M78 32h20v20'/><path d='M30 76v20h20'/><path d='M78 96h20V76'/></g><rect x='54' y='54' width='20' height='20' fill='%2318192D'/></svg>">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: left-aligned editorial grid. Headings sit in a narrow left column, content in the wide right one.
+   The product's own viewfinder brackets and the cobalt "signal" colour are the only decoration. */
+:root{
+  --bg:#000000; --surface:#0D0D12; --rule:#25252E; --rule-strong:#3D3D4A;
+  --ink:#FFFFFF; --ink-2:#E2E4EE; --ink-3:#B0B3C4;
+  --signal:#6F88FF; --on-signal:#000000; --rec:#FF6F5A; --ok:#4CC38A; --stage:#000000;
+  --display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#000000; --surface:#0D0D12; --rule:#25252E; --rule-strong:#3D3D4A;
+  --ink:#FFFFFF; --ink-2:#E2E4EE; --ink-3:#B0B3C4;
+  --signal:#6F88FF; --on-signal:#000000; --rec:#FF6F5A; --ok:#4CC38A; --stage:#000000; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#000000; --surface:#0D0D12; --rule:#25252E; --rule-strong:#3D3D4A;
+  --ink:#FFFFFF; --ink-2:#E2E4EE; --ink-3:#B0B3C4;
+  --signal:#6F88FF; --on-signal:#000000; --rec:#FF6F5A; --ok:#4CC38A; --stage:#000000; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.6 var(--body);-webkit-font-smoothing:antialiased;
+  padding-block:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1400px;margin:0 auto}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--signal);outline-offset:3px}
+h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance}
+p{margin:0}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* brand mark (same construction as the extension's popup) */
+.mark{display:inline-block;width:28px;height:28px;flex:none;border-radius:7px;background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='28' fill='%232548E2'/><g fill='none' stroke='%23fff' stroke-width='8'><path d='M30 52V32h20'/><path d='M78 32h20v20'/><path d='M30 76v20h20'/><path d='M78 96h20V76'/></g><rect x='54' y='54' width='20' height='20' fill='%2318192D'/></svg>") center/contain no-repeat}
+
+/* nav */
+nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:14px;
+  position:sticky;top:env(safe-area-inset-top,0px);z-index:50;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--rule)}
+html{scroll-padding-top:calc(76px + env(safe-area-inset-top,0px))}
+.brand{display:flex;align-items:center;gap:10px;font:600 21px/1 var(--display);letter-spacing:-.01em;text-decoration:none}
+.links{display:flex;align-items:center;gap:32px;font-size:16px}
+.links a{text-decoration:none;color:var(--ink-2)}
+.links a:hover{color:var(--ink)}
+@media(max-width:640px){.links a.plain{display:none}.links{gap:0}}
+
+/* buttons */
+.btn{display:inline-block;font:600 16px/1 var(--body);text-decoration:none;padding:17px 26px;border-radius:6px;
+  background:var(--ink);color:var(--bg);border:1px solid var(--ink);cursor:pointer;transition:background .12s,color .12s}
+.btn:hover{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+.btn.sm{padding:12px 18px;font-size:15px}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule-strong)}
+.btn.ghost:hover{background:transparent;border-color:var(--ink);color:var(--ink)}
+/* Add to Chrome: brand blue. The .links a rules above would otherwise grey the label in the nav, hence the extra specificity. */
+.btn.chrome-link,.links a.btn.chrome-link{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+.btn.chrome-link:hover,.links a.btn.chrome-link:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+/* hero */
+.hero{padding-top:clamp(20px,3.5vw,48px)}
+h1{font-size:clamp(2.7rem,7.6vw,7rem);line-height:.96;letter-spacing:-.045em;font-weight:600;max-width:17ch}
+.sub{font:500 clamp(1.3rem,2.6vw,2rem)/1.2 var(--display);letter-spacing:-.02em;color:var(--signal);margin-top:clamp(14px,2vw,22px)}
+.tags{display:flex;flex-wrap:nowrap;white-space:nowrap;gap:0 1em;margin-top:14px;font:500 min(1.25rem,3.2vw)/1.3 var(--display);letter-spacing:-.01em;color:var(--ink)}
+.tags span{display:inline-flex;align-items:center;gap:.5em}
+.tags span::before{content:"";width:.35em;height:.35em;background:var(--signal);flex:none}
+.hero-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px 48px;margin-top:clamp(24px,3.5vw,40px);align-items:start}
+.hero-row .lede{font-size:clamp(1.1rem,1.7vw,1.4rem);color:var(--ink-2);max-width:44ch;line-height:1.55}
+.cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.fine{font-size:14px;color:var(--ink-3);margin-top:14px;max-width:46ch}
+@media(max-width:820px){.hero-row{grid-template-columns:1fr}}
+.fine.one-line{grid-column:1/-1;max-width:none;white-space:nowrap;margin-top:0;font-size:clamp(10px,2.8vw,14px)}
+
+/* demo */
+.demo{margin-top:clamp(28px,3.5vw,44px)}
+.stage{position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;border-radius:4px;background:linear-gradient(to bottom right,#18192D,#2548E2);
+  transition:background .25s}
+.win{position:absolute;overflow:hidden;background:#fff;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.page{position:absolute;left:0;top:0;width:1280px;height:720px;transform-origin:0 0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:#1d2433;background:#f7f8fa;will-change:transform}
+.page *{box-sizing:border-box}
+.side{position:absolute;left:0;top:0;width:220px;height:720px;background:#1b2231;color:#aab3c7;padding:34px 26px;font-size:20px}
+.side b{display:block;color:#fff;font-size:24px;margin-bottom:40px;font-weight:600}
+.side div{padding:12px 0}.side .on{color:#fff}
+.ptitle{position:absolute;left:260px;top:52px;font:600 40px/1 "Familjen Grotesk",sans-serif;letter-spacing:-.02em}
+.plabel{position:absolute;left:260px;font-size:19px;color:#5b6377}
+.pin{position:absolute;left:260px;width:520px;height:52px;border:2px solid #cfd4df;border-radius:6px;background:#fff;padding:0 16px;display:flex;align-items:center;font-size:23px;white-space:nowrap;overflow:hidden}
+.pin.focus{border-color:#2748E0;box-shadow:0 0 0 4px rgba(39,72,224,.15)}
+.caret{display:inline-block;width:2px;height:28px;background:#2748E0;margin-left:2px}
+.pbtn{position:absolute;left:260px;top:480px;width:200px;height:56px;border-radius:6px;background:#1b2231;color:#fff;font:600 21px/56px "IBM Plex Sans",sans-serif;text-align:center;transition:background .2s}
+.pbtn.sent{background:#1B7348}
+.prev{position:absolute;left:840px;top:100px;width:380px;height:520px;background:#fff;border:1px solid #dfe3ea;border-radius:8px;padding:34px 32px}
+.prev small{display:block;font-size:16px;color:#7a8296;margin-bottom:6px}
+.prev .v{font:600 28px/1.2 "Familjen Grotesk",sans-serif;margin-bottom:34px;min-height:34px;overflow-wrap:anywhere}
+.badge{display:inline-block;font-size:17px;padding:5px 14px;border-radius:99px;background:#e9ecf3;color:#4a5163}
+.badge.sent{background:#d9f0e4;color:#1B7348}
+.cursor{position:absolute;left:0;top:0;width:34px;height:34px;pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
+.ring{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:3px solid #2748E0;border-radius:50%;opacity:0;pointer-events:none}
+
+.br{position:absolute;width:20px;height:20px;border:0 solid #8ea2ff;pointer-events:none;transition:none}
+.br.k1{border-top-width:2px;border-left-width:2px}.br.k2{border-top-width:2px;border-right-width:2px}
+.br.k3{border-bottom-width:2px;border-left-width:2px}.br.k4{border-bottom-width:2px;border-right-width:2px}
+.recro{position:absolute;left:44px;top:34px;display:flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);color:#fff;
+  background:rgba(8,10,16,.55);padding:6px 9px;border-radius:3px;font-variant-numeric:tabular-nums}
+.recro i{width:8px;height:8px;border-radius:50%;background:#ff5a45;display:block}
+@media(max-width:560px){.recro{left:8px;top:6px;font-size:10px;padding:4px 6px}}
+
+.controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:18px 36px;margin-top:16px;padding:16px 18px;background:var(--surface);border:1px solid var(--rule-strong);border-radius:10px;font-size:15px;color:var(--ink-2)}
+.trytitle{flex:1 0 100%;font:600 1.1rem/1.3 var(--display);letter-spacing:-.01em;color:var(--ink)}
+.try{flex:1 0 100%;list-style:none;margin:0;padding:0 0 18px;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 24px;counter-reset:s}
+.try li{counter-increment:s;display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45;color:var(--ink-2)}
+.try li::before{content:counter(s);flex:none;width:22px;height:22px;border-radius:50%;background:var(--signal);color:var(--on-signal);font:600 12px/22px var(--mono);text-align:center}
+.try b{color:var(--ink);font-weight:600}
+.grp{display:grid;gap:10px}
+.grp .lab{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.grp .lab b{color:var(--signal);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--rule-strong);border-radius:9px;padding:3px;gap:3px;background:var(--bg)}
+.seg button{border:0;background:none;color:var(--ink-2);font:500 14px/1 var(--body);padding:11px 16px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--signal);color:var(--on-signal)}
+.ctl{display:flex;align-items:center;gap:10px}
+.txtbtn{background:none;border:1px solid var(--rule-strong);border-radius:6px;color:var(--ink);font:500 14px/1 var(--body);padding:12px 16px;cursor:pointer;min-width:84px}
+.txtbtn:hover{border-color:var(--ink)}
+.sw{display:flex;gap:8px}
+.sw button{width:36px;height:36px;border-radius:7px;border:1px solid var(--rule-strong);padding:0;cursor:pointer}
+.sw button[aria-pressed="true"]{outline:2px solid var(--signal);outline-offset:2px}
+
+/* timeline (demo and studio mock share it) */
+.tl{position:relative;margin-top:16px;height:64px;border-top:1px solid var(--rule-strong)}
+.ticks{position:absolute;left:0;right:0;top:0;height:12px}
+.ticks i{position:absolute;top:0;width:1px;height:10px;background:var(--ink-3)}
+.track{position:absolute;left:0;right:0;top:20px;height:34px;background:var(--surface);border:1px solid var(--rule)}
+.blk{position:absolute;top:3px;bottom:3px;background:var(--signal);color:var(--on-signal);font:500 11px/1 var(--mono);padding:0 7px;display:flex;align-items:center;transition:opacity .2s,background .2s}
+.tl.off .blk{background:var(--rule-strong);opacity:.6;color:var(--ink)}
+.blk.sel{outline:2px solid var(--ink);outline-offset:1px}
+.head{position:absolute;top:0;bottom:0;width:2px;background:var(--rec);margin-left:-1px}
+.tcrow{display:flex;justify-content:space-between;margin-top:8px;font:400 12px/1 var(--mono);color:var(--ink-3)}
+.cap{font-size:15px;line-height:1.55;color:var(--ink);margin-top:16px;max-width:76ch;padding:14px 18px;background:color-mix(in srgb,var(--signal) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--signal) 45%,transparent);border-left:3px solid var(--signal);border-radius:6px}
+.cap .tag{display:inline-block;font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--on-signal);background:var(--signal);padding:4px 7px;border-radius:4px;margin-right:8px;vertical-align:1px}
+.cap b{color:var(--signal);font-weight:600}
+
+/* sections */
+section{padding-top:clamp(64px,10vw,128px)}
+.sec{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:24px 48px}
+.sec>h2{font-size:clamp(1.9rem,3.8vw,3.2rem);line-height:1.08;letter-spacing:-.03em;max-width:12ch}
+@media(max-width:820px){.sec{grid-template-columns:1fr}.sec>h2{max-width:20ch}}
+.rows>div{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr);gap:8px 32px;padding-block:24px;border-top:1px solid var(--rule)}
+.rows>div:last-child{border-bottom:1px solid var(--rule)}
+.rows h3{font-size:1.45rem;letter-spacing:-.02em}
+.rows p{color:var(--ink-2);max-width:60ch;text-wrap:pretty}
+.rows p.wide{max-width:92ch}
+.rows p+p{margin-top:10px}
+@media(max-width:560px){.rows>div{grid-template-columns:1fr}}
+
+dl.spec{margin:0}
+dl.spec>div{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:4px 32px;padding-block:14px;border-top:1px solid var(--rule)}
+dl.spec>div:last-child{border-bottom:1px solid var(--rule)}
+dl.spec dt{color:var(--ink-3);font-size:15px;padding-top:2px}
+dl.spec dd{margin:0}
+dl.spec dd small{display:block;color:var(--ink-3);font-size:13px;margin-top:2px}
+@media(max-width:560px){dl.spec>div{grid-template-columns:1fr}}
+.m{font-family:var(--mono);font-size:.92em}
+
+/* studio mock */
+.studio{display:grid;grid-template-columns:minmax(0,1fr);gap:32px}
+.mock{border:1px solid var(--rule-strong);background:var(--surface);padding:20px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:24px}
+@media(max-width:760px){.mock{grid-template-columns:1fr}}
+.mock h4{margin:0 0 10px;font:600 13px/1 var(--body)}
+.mock .tl{margin-top:0}
+.ctrl{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-2);margin:12px 0 6px}
+.rng{height:2px;background:var(--rule-strong);position:relative}
+.rng::after{content:"";position:absolute;left:var(--p);top:-6px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--signal)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);margin-top:8px}
+.chk i{width:14px;height:14px;border:1px solid var(--signal);background:var(--signal);display:block;position:relative}
+.chk i::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--on-signal);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.sw.mini button{width:18px;height:18px;cursor:default}
+.points{columns:2 260px;column-gap:40px;color:var(--ink-2);margin:0;padding:0;list-style:none}
+.points li{break-inside:avoid;padding:10px 0;border-top:1px solid var(--rule)}
+.points b{color:var(--ink);font-weight:600}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:stretch}
+@media(max-width:820px){.plans{grid-template-columns:1fr}}
+.plan{padding:32px 30px;display:flex;flex-direction:column;gap:20px;position:relative}
+.plan.main{background:var(--surface);color:var(--ink);border:1px solid var(--signal)}
+.plan.main .brk{position:absolute;width:18px;height:18px;border:0 solid var(--signal)}
+.plan.main .brk.a{top:10px;left:10px;border-top-width:2px;border-left-width:2px}
+.plan.main .brk.b{top:10px;right:10px;border-top-width:2px;border-right-width:2px}
+.plan.main .brk.c{bottom:10px;left:10px;border-bottom-width:2px;border-left-width:2px}
+.plan.main .brk.d{bottom:10px;right:10px;border-bottom-width:2px;border-right-width:2px}
+.plan.alt{border:1px solid var(--rule-strong)}
+.plan h3{font-size:1.4rem;letter-spacing:-.01em}
+.price{font:600 clamp(3rem,6vw,4.2rem)/1 var(--display);letter-spacing:-.04em;display:flex;align-items:baseline;gap:10px}
+.price span{font:400 15px/1 var(--body);letter-spacing:0;opacity:.7}
+.plan ul{list-style:none;margin:0;padding:0;font-size:16px}
+.plan li{padding:10px 0;border-top:1px solid color-mix(in srgb,currentColor 18%,transparent)}
+.plan .btn{margin-top:auto;text-align:center}
+.plan.main .btn{background:var(--signal);color:var(--on-signal);border-color:var(--signal)}
+.plan.main .btn:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.plan .note{font-size:13px;opacity:.75}
+.meter{display:flex;flex-direction:column;gap:8px;font-size:14px}
+.meter .bar{height:8px;border-radius:99px;background:color-mix(in srgb,currentColor 22%,transparent);overflow:hidden}
+.meter .fill{display:block;height:100%;width:0;background:currentColor;border-radius:99px;transition:width .6s}
+.meter .lbl{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px}
+#admin .box{border:1px solid var(--rule-strong);background:var(--surface);padding:24px;display:grid;gap:16px;max-width:520px}
+#admin label{display:grid;gap:6px;font-size:14px;color:var(--ink-2)}
+#admin input{font:500 16px var(--body);padding:12px;border:1px solid var(--rule-strong);border-radius:6px;background:var(--bg);color:var(--ink);min-width:0}
+#admin #admNum{width:110px;text-align:center}
+#admin .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#admin .stat{font-size:14px;min-height:1.4em;color:var(--ink-2)}
+.btn[aria-disabled="true"]{opacity:.45;pointer-events:none;cursor:default}
+
+/* faq */
+details{border-top:1px solid var(--rule)}
+details:last-child{border-bottom:1px solid var(--rule)}
+summary{list-style:none;cursor:pointer;padding:20px 0;font:600 1.25rem/1.35 var(--display);display:flex;justify-content:space-between;gap:20px;letter-spacing:-.01em}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font:400 22px/1 var(--mono);color:var(--ink-3);flex:none}
+details[open] summary::after{content:"\2212"}
+details p{color:var(--ink-2);padding-bottom:20px;max-width:62ch}
+
+footer{margin-top:clamp(72px,10vw,128px);border-top:1px solid var(--rule);padding-block:28px 40px;display:flex;flex-wrap:wrap;gap:12px 32px;justify-content:space-between;font-size:13px;color:var(--ink-3)}
+footer .brand{font-size:15px;color:var(--ink)}
+.flinks{display:flex;flex-wrap:wrap;gap:6px 20px}
+.flinks a,details p a{color:var(--ink-2);text-underline-offset:3px}
+.flinks a:hover,details p a:hover{color:var(--ink)}
+
+/* Phones and tablets (touch screens) always get the stacked layout, even when the browser is
+   in "Desktop site" mode and reports a wide viewport. */
+@media (hover:none) and (pointer:coarse){
+  .links a.plain{display:none}.links{gap:0}
+  .hero-row,.sec,.plans,.mock{grid-template-columns:1fr}
+  .sec>h2{max-width:20ch}
+  .rows>div,dl.spec>div{grid-template-columns:1fr}
+  h1{max-width:none}
+  .hero-row .lede{max-width:60ch}
+}
+
+@media(max-width:560px){
+  section{padding-top:56px}
+  nav{padding-block:10px}.brand{font-size:19px}.mark{width:24px;height:24px}
+  nav .btn.sm{padding:10px 14px;font-size:14px}
+  h1{font-size:1.95rem;line-height:1.02}
+  .sub{font-size:1.05rem}
+  .cta .btn{flex:1 1 150px;text-align:center;padding:16px 18px}
+  .controls{flex-direction:column;align-items:stretch;gap:16px;padding:16px 14px}
+  .try{grid-template-columns:1fr;padding-bottom:16px}
+  .grp{width:100%}
+  .seg{display:grid;grid-template-columns:1fr 1fr}.seg button{text-align:center;padding:13px 8px}
+  .controls .sw{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  .controls .sw button{width:100%;height:40px}
+  .controls .txtbtn{width:100%;padding:14px}
+  .cap{font-size:14px;padding:12px 14px}
+  .plan{padding:24px 20px}
+  .tl{height:56px}
+  body{font-size:15px;line-height:1.55}
+  .hero-row .lede{font-size:1rem}
+  .sec>h2{font-size:1.5rem}
+  .rows h3{font-size:1.2rem}.rows>div{padding-block:18px}
+  dl.spec dt{font-size:13px}
+  .price{font-size:2.6rem}.plan h3{font-size:1.2rem}.plan ul{font-size:14.5px}
+  .btn{font-size:15px}
+  summary{font-size:1rem;padding:16px 0}
+  details p{font-size:14.5px;padding-bottom:16px}
+  .trytitle{font-size:1rem}.try li{font-size:14px}
+  .controls{font-size:14px}.seg button{font-size:13.5px}
+  .cap{font-size:13px}
+  #start p{font-size:1rem!important}
+  footer{flex-direction:column;gap:14px;padding-block:24px 32px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style>
+
+<style>
+/* ===== Polish layer: spacing, type scale and responsive fixes (content and demo logic unchanged) ===== */
+:root{--gutter:clamp(18px,4.5vw,56px)}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{padding-left:max(var(--gutter),env(safe-area-inset-left,0px));padding-right:max(var(--gutter),env(safe-area-inset-right,0px));overflow-x:clip}
+
+/* nav + buttons */
+nav{padding-block:12px}
+.links{gap:28px;font-size:15px}
+.links a.plain{font-weight:500}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:50px;padding:14px 26px;border-radius:10px;font-weight:600}
+.btn.sm{min-height:40px;padding:10px 18px}
+
+/* hero */
+.hero{position:relative;padding-top:clamp(32px,6vw,88px)}
+.hero::before{content:"";position:absolute;left:calc(-1*var(--gutter));right:calc(-1*var(--gutter));top:-80px;height:560px;z-index:-1;pointer-events:none;
+  background:radial-gradient(60% 70% at 18% 0%,color-mix(in srgb,var(--signal) 20%,transparent),transparent 70%)}
+h1{font-size:clamp(2.5rem,8vw,6.4rem);line-height:1;letter-spacing:-.04em;max-width:16ch}
+.sub{margin-top:clamp(16px,2vw,24px)}
+.tags{flex-wrap:wrap;white-space:normal;gap:8px;margin-top:22px;font:500 .95rem/1 var(--body);letter-spacing:0}
+.tags span{padding:9px 14px;border:1px solid var(--rule-strong);border-radius:99px;color:var(--ink-2);gap:.55em}
+.tags span::before{width:6px;height:6px;border-radius:50%}
+.hero-row{align-items:center;margin-top:clamp(28px,4vw,48px)}
+.fine.one-line{white-space:normal;max-width:none;margin-top:0;font-size:14px}
+
+/* demo */
+.demo{margin-top:clamp(32px,4vw,56px)}
+.stage{border-radius:16px;border:1px solid var(--rule-strong)}
+.controls{border-radius:14px;padding:20px 22px}
+.cap{border-radius:10px}
+
+/* sections */
+section{padding-top:clamp(72px,11vw,144px)}
+.sec>h2{max-width:13ch}
+@media(min-width:821px){.sec>h2{position:sticky;top:calc(92px + env(safe-area-inset-top,0px));align-self:start}}
+.mock{border-radius:14px;padding:clamp(16px,2.5vw,28px)}
+.plan{border-radius:14px}
+summary{padding:22px 0;transition:color .12s}
+summary:hover{color:var(--signal)}
+footer{font-size:14px}
+
+/* phones */
+@media(max-width:560px){
+  body{font-size:16px;line-height:1.6}
+  nav .btn.sm{min-height:38px;padding:8px 14px}
+  h1{font-size:clamp(2.3rem,11.5vw,2.9rem)}
+  .sub{font-size:1.2rem}
+  .tags span{font-size:.85rem;padding:8px 12px}
+  .hero-row .lede{font-size:1.05rem}
+  .cta .btn{flex:1 1 100%}
+  /* demo goes edge to edge so the recording stays legible */
+  .stage{width:calc(100% + 2*var(--gutter));margin-inline:calc(-1*var(--gutter));border-radius:0;border-inline:0}
+  section{padding-top:64px}
+  .sec>h2{font-size:1.8rem;max-width:none}
+  .rows h3{font-size:1.25rem}
+  .try li,.controls{font-size:15px}
+  .cap{font-size:14px}
+  .price{font-size:3rem}
+  .plan ul{font-size:15.5px}
+  summary{font-size:1.05rem;padding:18px 0}
+  details p{font-size:16px}
+  footer{font-size:13.5px}
+}
+</style>
+<style>
+/* ===== Mobile pass 2 ===== */
+@media(max-width:560px){
+  .hero{padding-top:24px}
+  h1{max-width:none}
+  .stage{aspect-ratio:4/3}
+  .recro{left:10px;top:10px}
+  .controls{padding:18px 16px;gap:18px}
+  .trytitle{font-size:1.05rem}
+  .try{gap:10px;padding-bottom:16px}
+  .try li{font-size:14.5px}
+  .controls .grp:last-child{grid-column:auto}
+  .seg button{font-size:14px;padding:14px 8px}
+  .cap{margin-top:14px}
+  .cap .tag{display:table;margin:0 0 8px}
+  .sec{gap:20px}
+  .rows>div{padding-block:20px}
+  .rows p{font-size:15.5px;line-height:1.6}
+  dl.spec>div{padding-block:14px;gap:3px}
+  dl.spec dt{font:500 12px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--signal)}
+  dl.spec dd{font-size:15.5px;line-height:1.5}
+  dl.spec dd small{font-size:13.5px}
+  .points li{padding:12px 0;font-size:15.5px}
+  .plans{gap:16px}
+  .plan{padding:26px 20px;gap:16px}
+  .plan li{padding:11px 0}
+  #start .btn{flex:1 1 100%}
+  footer{gap:12px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>SmoothRec</a>
+  <div class="links">
+    <a class="plain" href="#how">How it works</a>
+    <a class="plain" href="#details">Details</a>
+    <a class="plain" href="#privacy">Privacy</a>
+    <a class="plain" href="#pricing">Pricing</a>
+    <a class="btn sm chrome-link" href="#pricing">Add to Chrome</a>
+  </div>
+</nav>
+
+<main>
+<header class="hero" id="top">
+  <h1>Screen recordings that zoom in on their own.</h1>
+  <p class="sub">Save it as a file or send a link.</p>
+  <p class="tags"><span>No download.</span><span>Watches instantly.</span><span>Screenshot too.</span></p>
+  <div class="hero-row">
+    <p class="lede">SmoothRec is a Chrome extension that records a tab and follows your clicks and typing with a smooth zoom, so the video is finished when you press stop.</p>
+    <div>
+      <div class="cta"><a class="btn chrome-link" href="#pricing">Add to Chrome</a><a class="btn ghost" href="#how">See how it works</a></div>
+    </div>
+    <p class="fine one-line">Recordings stay on your computer until you choose to share one.</p>
+  </div>
+
+  <div class="demo">
+    <div class="stage" id="stage" role="img" aria-label="Looping demo of a recorded invoice form. The view zooms in on each field as the cursor clicks and types, then zooms out.">
+      <div class="win" id="win">
+        <div class="page" id="page" aria-hidden="true">
+          <div class="side"><b>Tally &amp; Co</b><div class="on">Invoices</div><div>Clients</div><div>Reports</div><div>Settings</div></div>
+          <div class="ptitle">New invoice</div>
+          <div class="plabel" style="top:140px">Client</div>
+          <div class="pin" id="f1" style="top:168px"><span id="t1"></span><span class="caret" id="c1" style="display:none"></span></div>
+          <div class="plabel" style="top:250px">Amount (USD)</div>
+          <div class="pin" id="f2" style="top:278px"><span id="t2"></span><span class="caret" id="c2" style="display:none"></span></div>
+          <div class="plabel" style="top:360px">Due date</div>
+          <div class="pin" style="top:388px">Nov 30, 2026</div>
+          <div class="pbtn" id="btn">Send invoice</div>
+          <div class="prev"><small>Bill to</small><div class="v" id="pv1">Client name</div><small>Total</small><div class="v" id="pv2">$0.00</div><small>Status</small><span class="badge" id="pb">Draft</span></div>
+          <div class="ring" id="ring"></div>
+          <svg class="cursor" id="cur" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l7 19 3-8 8-3z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+      <i class="br k1" id="b1"></i><i class="br k2" id="b2"></i><i class="br k3" id="b3"></i><i class="br k4" id="b4"></i>
+      <div class="recro"><i></i><span id="rec">REC 00:00.0</span></div>
+    </div>
+
+    <div class="controls" role="group" aria-label="Demo controls">
+      <div class="trytitle">Try the demo. It works like the real extension.</div>
+      <ol class="try">
+        <li><span><b>Watch</b> the zoom follow the cursor and the typing.</span></li>
+        <li><span><b>Compare:</b> tap Normal zoom to see the plain recording.</span></li>
+        <li><span><b>Style it:</b> pick a background colour below.</span></li>
+      </ol>
+      <div class="grp"><span class="lab">Try it: zoom</span>
+        <div class="seg"><button type="button" id="zmAuto" aria-pressed="true">Auto zoom</button><button type="button" id="zmNorm" aria-pressed="false">Normal zoom</button></div>
+      </div>
+      <div class="grp"><span class="lab">Background: <b id="bgName">Midnight</b></span>
+        <div class="sw" id="sw"></div>
+      </div>
+      <div class="grp"><span class="lab">Playback</span>
+        <button class="txtbtn" id="playBtn" type="button">Pause</button>
+      </div>
+    </div>
+
+    <div class="tl" id="tl">
+      <div class="ticks" id="ticks"></div>
+      <div class="track" id="track"></div>
+      <div class="head" id="head" style="left:0"></div>
+    </div>
+    <div class="tcrow"><span>0:00</span><span>0:14.5</span></div>
+    <p class="cap"><span class="tag">Live demo</span>This is a rebuilt demo using the extension's own zoom timing: 0.3 s in, 3.3 s hold, 0.4 s out, at 2×. <b>Blue blocks</b> are the zooms the editor would create. Ticks are the clicks and keystrokes it logged. Tap <b>Normal zoom</b> to see the plain recording, or pick a different <b>background</b>.</p>
+  </div>
+</header>
+
+<section id="how">
+  <div class="sec">
+    <h2>Record once. Fix it only if you want to.</h2>
+    <div class="rows">
+      <div>
+        <h3>Record</h3>
+        <div>
+          <p class="wide">Open a normal website tab, press Start recording, and work as usual. Tab audio is captured with the video. You can close the popup and the recording keeps going.</p>
+          <p>The zoom triggers on clicks, double clicks, focusing a field, and typing. Scrolling zooms back out.</p>
+        </div>
+      </div>
+      <div>
+        <h3>Adjust</h3>
+        <div>
+          <p>Every zoom is saved as a block on a timeline in the editing studio. Drag one, change its level, point it somewhere else, delete it, or add your own at the playhead. Pick a background, trim the ends, and export.</p>
+          <p>If the first pass is already right, skip the studio.</p>
+        </div>
+      </div>
+      <div>
+        <h3>Deliver</h3>
+        <div>
+          <p>Download the video at 720p, 1080p or 4K. Or press Stop and share to upload a 720p copy and get a link you can paste into a ticket, a pull request or a chat.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="studio">
+  <div class="sec">
+    <h2>An editor that starts from a finished edit.</h2>
+    <div class="studio">
+      <div class="mock" aria-hidden="true">
+        <div>
+          <h4>Timeline</h4>
+          <div class="tl"><div class="ticks" id="mticks"></div><div class="track" id="mtrack"></div><div class="head" style="left:34%"></div></div>
+          <div class="tcrow"><span>0:00</span><span>0:21</span></div>
+          <h4 style="margin-top:22px">Background</h4>
+          <div class="sw mini" id="msw"></div>
+        </div>
+        <div>
+          <h4>Selected zoom</h4>
+          <div class="ctrl"><span>Level</span><span class="mono">2.4×</span></div><div class="rng" style="--p:42%"></div>
+          <div class="ctrl"><span>Start</span><span class="mono">5.7 s</span></div>
+          <div class="ctrl"><span>Length</span><span class="mono">3.3 s</span></div>
+          <div class="chk"><i></i>Zoom on click / tap</div>
+          <div class="chk"><i></i>Zoom while typing</div>
+          <div class="chk"><i></i>Click ring effect</div>
+        </div>
+      </div>
+      <ul class="points">
+        <li><b>Zoom level from 1.2× to 4×.</b> Set a default, then adjust any single zoom.</li>
+        <li><b>Click the preview to aim.</b> Choose exactly where a selected zoom lands.</li>
+        <li><b>Six backgrounds.</b> Midnight, sunset, ocean, forest, graphite and snow.</li>
+        <li><b>Padding, corner radius, shadow.</b> Frame the recording the way you like.</li>
+        <li><b>Regenerate.</b> Turn click or typing zooms off and rebuild the whole set.</li>
+        <li><b>Trim.</b> Set start and end at the playhead. The original is kept.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="details">
+  <div class="sec">
+    <h2>The specifics.</h2>
+    <dl class="spec">
+      <div><dt>Captures</dt><dd>The current tab, with its audio<small>Normal http and https pages only. Chrome's own pages can't be recorded.</small></dd></div>
+      <div><dt>Download quality</dt><dd><span class="m">720p</span> at 2.5 Mbit/s, <span class="m">1080p</span> at 5, <span class="m">4K</span> at 12</dd></div>
+      <div><dt>File format</dt><dd>WebM<small>Opens in Chrome and most editors and players. Convert it if you need MP4.</small></dd></div>
+      <div><dt>Zoom triggers</dt><dd>Click, double click, field focus, typing</dd></div>
+      <div><dt>Zoom timing</dt><dd><span class="m">2×</span> by default, in over 0.3 s, held 3.3 s, out over 0.4 s</dd></div>
+      <div><dt>Screenshots</dt><dd>PNG, including a zoomed one that centres on your last click or the focused field. Free and unlimited.</dd></div>
+      <div><dt>Share links</dt><dd>Uploaded at <span class="m">1280×720</span> to Cloudinary<small>A link counts against your allowance only after the upload succeeds.</small></dd></div>
+    </dl>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="sec">
+    <h2>What it asks Chrome for, and why.</h2>
+    <div>
+      <dl class="spec">
+        <div><dt>Where recordings live</dt><dd>On your device, in the browser's own storage. Nothing is uploaded unless you press Share.</dd></div>
+        <div><dt>activeTab, tabCapture</dt><dd>Record the tab you start on, and nothing else</dd></div>
+        <div><dt>scripting</dt><dd>Adds the click and typing detector to that tab when you start. It is not installed on every site you visit.</dd></div>
+        <div><dt>offscreen</dt><dd>Keeps the recorder running after you close the popup</dd></div>
+        <div><dt>downloads, storage</dt><dd>Save the video file, and remember your quality setting and license key</dd></div>
+        <div><dt>Network</dt><dd>Only cloudinary.com, and only when you create a share link</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="sec">
+    <h2>First 100 pay once. Then it's monthly.</h2>
+    <div>
+      <div class="plans">
+        <div class="plan main">
+          <i class="brk a"></i><i class="brk b"></i><i class="brk c"></i><i class="brk d"></i>
+          <h3>Lifetime</h3>
+          <div class="price" id="pLife">$49 <span>one payment</span></div>
+          <div class="meter">
+            <div class="bar" id="lifeBar" role="progressbar" aria-label="Lifetime spots claimed" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="fill" id="lifeFill"></span></div>
+            <div class="lbl" id="lifeLbl">Limited to the first 100 buyers</div>
+          </div>
+          <ul>
+            <li>Auto-zoom, editing studio, backgrounds and trim</li>
+            <li>Unlimited downloads up to 4K</li>
+            <li>Unlimited screenshots</li>
+            <li>50 share links in total</li>
+          </ul>
+          <p class="note">Early-buyer price for the first 100 users only. Your 50 share links are a single allowance.</p>
+          <a class="btn" id="buyLife" href="#pricing">Buy lifetime</a>
+        </div>
+        <div class="plan alt">
+          <h3>Monthly</h3>
+          <div class="price" id="pMonth">$15 <span>per month</span></div>
+          <ul>
+            <li>Everything in Lifetime</li>
+            <li>100 share links, renewed every 30 days</li>
+            <li>Stop whenever you like</li>
+          </ul>
+          <p class="note" id="monthNote">Starts once all 100 lifetime spots are claimed. Your 100 share links then refresh every 30 days.</p>
+          <a class="btn ghost" id="buyMonth" href="#pricing">Buy monthly</a>
+        </div>
+      </div>
+      <p class="fine" style="max-width:62ch">Add SmoothRec to Chrome, then paste your license key into its popup to activate. Downloads and screenshots never use up your share links. Every plan has a 7-day refund.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="sec">
+    <h2>Questions.</h2>
+    <div>
+      <details><summary>Does my recording get uploaded?</summary><p>No. The video is stored on your computer. The only upload happens when you press Stop and share or Create share link, and then only that 720p copy goes to Cloudinary.</p></details>
+      <details><summary>Why does exporting take as long as the video?</summary><p>The studio renders your edit by playing the video through in real time, so a two minute recording takes about two minutes to export. Keep the editor tab open until it finishes. Trimming works the same way and saves a new copy.</p></details>
+      <details><summary>Can I stop it zooming on some things?</summary><p>Yes. Turn off zoom on click or zoom while typing and regenerate, or delete individual blocks from the timeline. You can also add zooms by hand wherever you want one.</p></details>
+      <details><summary>Can I record a Chrome settings page or a new tab?</summary><p>No. Chrome does not allow extensions to capture its own pages. Open a normal website tab and start from there.</p></details>
+      <details><summary>What exactly does it record?</summary><p>The tab you start on, plus that tab's audio. Your other tabs, other windows and the rest of your screen are never captured.</p></details>
+      <details><summary>Do I have to edit the video?</summary><p>No. The zooms are placed for you when you press stop, so you can download it as it is. The editor is there if you want to move a zoom, change the background or trim.</p></details>
+      <details><summary>Can I change how the video looks?</summary><p>Yes. Choose from six backgrounds (midnight, sunset, ocean, forest, graphite and snow), then adjust the padding, corner radius and shadow. You can also click the preview to aim a zoom exactly where you want it.</p></details>
+      <details><summary>What quality and format do I get?</summary><p>Downloads come as 720p, 1080p or 4K WebM files. Higher settings use a higher bitrate (2.5, 5 and 12 Mbit/s), so the files are bigger. WebM opens in Chrome and most editors and players. If you need MP4, run it through any video converter.</p></details>
+      <details><summary>Does trimming damage my original?</summary><p>No. Trimming saves a new copy and keeps the original, so you can always go back.</p></details>
+      <details><summary>Do screenshots cost anything?</summary><p>No. PNG screenshots are free and unlimited, including a zoomed one that centres on your last click or the field you were typing in.</p></details>
+      <details><summary>What if a share link fails to upload?</summary><p>It doesn't cost you anything. A link only counts against your allowance after the upload succeeds, so you can simply try again.</p></details>
+      <details id="refund"><summary>What is your refund policy?</summary><p>You can ask for a refund within 7 days of buying, on either plan. Email <a href="mailto:dazzamit98@gmail.com">dazzamit98@gmail.com</a> with the email address you bought with and we'll take care of it.</p></details>
+      <details><summary>How can I contact you?</summary><p>Email <a href="mailto:dazzamit98@gmail.com">dazzamit98@gmail.com</a> for support, refunds or any question about SmoothRec.</p></details>
+      <details><summary>What happens to my share links?</summary><p>On the monthly plan the count resets every 30 days. On the lifetime plan it is a single allowance of 50. Re-entering your key never resets usage. Downloads are separate and unlimited on both plans.</p></details>
+      <details><summary>What happens after the first 100 users?</summary><p>The $49 lifetime plan closes once 100 people have it. After that, SmoothRec is $15 a month. The progress bar on this page shows how many lifetime spots are left.</p></details>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="sec">
+    <h2>Record the next one with SmoothRec.</h2>
+    <div>
+      <p style="color:var(--ink-2);font-size:1.2rem;max-width:44ch;margin-bottom:24px">Open a tab, press Start recording, and stop when you're done. The zoom is already there.</p>
+      <div class="cta"><a class="btn chrome-link" href="#pricing">Add to Chrome</a><a class="btn ghost" href="#pricing">See pricing</a></div>
+    </div>
+  </div>
+</section>
+<section id="admin" hidden>
+  <div class="sec">
+    <h2>Admin.</h2>
+    <div class="box">
+      <p>Lifetime spots claimed (0 to 100)</p>
+      <div class="row"><button class="btn ghost sm" type="button" id="admDec" aria-label="Subtract one">−1</button><input id="admNum" type="number" min="0" max="100" step="1" aria-label="Lifetime spots claimed"><button class="btn ghost sm" type="button" id="admInc" aria-label="Add one">+1</button></div>
+      <label>Admin token<input id="admTok" type="password" autocomplete="current-password"></label>
+      <div class="row"><button class="btn sm" type="button" id="admSave">Save</button><button class="btn ghost sm" type="button" id="admDl">Download slots.json</button></div>
+      <p class="stat" id="admStat" role="status"></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>SmoothRec</a>
+  <span>Version 1.1.0. Share links are hosted on Cloudinary.</span>
+  <span class="flinks"><a href="#refund">Refund policy</a><a href="mailto:dazzamit98@gmail.com">dazzamit98@gmail.com</a></span>
+</footer>
+</div>
+
+<script>
+(function(){
+  // Set your checkout URLs here.
+  var CHROME_STORE = "#pricing"; // Chrome Web Store listing URL
+  var CHECKOUT = { life: "#pricing", month: "#pricing" };
+  [].forEach.call(document.querySelectorAll(".chrome-link"),function(a){a.href=CHROME_STORE});
+  document.getElementById("buyLife").href = CHECKOUT.life;
+  document.getElementById("buyMonth").href = CHECKOUT.month;
+
+  // Lifetime offer: first 100 buyers. The count is read from SLOTS_URL (JSON, or a published Google Sheet CSV).
+  // If SLOTS_URL can't be loaded, the page uses LIFETIME_CLAIMED below, so you can also just edit that number.
+  // Open this page with #admin on the end of the URL to update it.
+  var SLOTS_URL = "/api/slots";
+  var LIFETIME_TOTAL = 100, LIFETIME_CLAIMED = 0;
+  var g = function(id){return document.getElementById(id)};
+  function setLink(a,href,txt){a.removeAttribute("aria-disabled");a.href=href;a.textContent=txt}
+  function lock(a,txt){a.setAttribute("aria-disabled","true");a.removeAttribute("href");a.textContent=txt}
+  function clampN(v){v=Math.round(Number(v));return isFinite(v)?Math.max(0,Math.min(LIFETIME_TOTAL,v)):0}
+  function renderLife(){
+    var n=clampN(LIFETIME_CLAIMED), left=LIFETIME_TOTAL-n, out=left===0, pct=n/LIFETIME_TOTAL*100;
+    g("lifeFill").style.width=pct+"%";
+    g("lifeBar").setAttribute("aria-valuenow",String(Math.round(pct)));
+    g("lifeLbl").textContent=out?"All "+LIFETIME_TOTAL+" lifetime spots are taken":n+" of "+LIFETIME_TOTAL+" claimed \u00b7 "+left+" left";
+    var life=g("buyLife"),mon=g("buyMonth"),note=g("monthNote");
+    if(out){lock(life,"Sold out");setLink(mon,CHECKOUT.month,"Buy monthly");note.textContent="Lifetime has sold out. Your 100 share links refresh every 30 days."}
+    else{setLink(life,CHECKOUT.life,"Buy lifetime");lock(mon,"Opens after lifetime sells out");note.textContent="Starts once all 100 lifetime spots are claimed. Your 100 share links then refresh every 30 days."}
+  }
+  function syncAdm(){g("admNum").value=clampN(LIFETIME_CLAIMED)}
+  fetch(SLOTS_URL,{cache:"no-store"})
+    .then(function(r){if(!r.ok)throw new Error("bad status");return r.text()})
+    .then(function(t){
+      // accepts {"claimed": 37} or a plain number / CSV whose first cell is the number
+      var n;try{n=JSON.parse(t).claimed}catch(e){n=parseFloat(String(t).split(/[\r\n,]/)[0])}
+      LIFETIME_CLAIMED=clampN(n);
+    })
+    .catch(function(){})
+    .then(function(){renderLife();syncAdm()});
+
+  // admin panel (only shown at #admin; the server checks the token, not this page)
+  function adminRoute(){
+    var on=location.hash==="#admin";g("admin").hidden=!on;
+    if(on){syncAdm();g("admin").scrollIntoView()}
+  }
+  window.addEventListener("hashchange",adminRoute);adminRoute();
+  function openFaq(){try{var t=location.hash&&document.getElementById(location.hash.slice(1));if(t&&t.tagName==="DETAILS")t.open=true}catch(e){}}
+  window.addEventListener("hashchange",openFaq);openFaq();
+  function stat(t){g("admStat").textContent=t}
+  g("admDec").addEventListener("click",function(){g("admNum").value=clampN(Number(g("admNum").value)-1)});
+  g("admInc").addEventListener("click",function(){g("admNum").value=clampN(Number(g("admNum").value)+1)});
+  g("admSave").addEventListener("click",function(){
+    var n=clampN(g("admNum").value),tok=g("admTok").value;
+    if(!tok){stat("Enter the admin token first.");return}
+    stat("Saving...");
+    fetch(SLOTS_URL,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},body:JSON.stringify({claimed:n})})
+      .then(function(r){
+        if(r.status===401)throw new Error("Wrong admin token.");
+        if(!r.ok)throw new Error("Save failed (status "+r.status+").");
+        return r.json();
+      })
+      .then(function(d){LIFETIME_CLAIMED=clampN(d.claimed);renderLife();syncAdm();stat("Saved. "+LIFETIME_CLAIMED+" of "+LIFETIME_TOTAL+" claimed.")})
+      .catch(function(e){stat(e.message||"Could not save.")});
+  });
+  g("admDl").addEventListener("click",function(){
+    var blob=new Blob([JSON.stringify({claimed:clampN(g("admNum").value)})],{type:"application/json"});
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="slots.json";a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+    stat("Downloaded. Upload it next to your page and set SLOTS_URL to \"slots.json\".");
+  });
+
+  var BG = [["Midnight","#18192D","#2548E2"],["Sunset","#fb923c","#db2777"],["Ocean","#38bdf8","#6366f1"],
+            ["Forest","#10b981","#0f766e"],["Graphite","#3f3f46","#09090b"],["Snow","#f4f4f5","#d4d4d8"]];
+  var $ = function(id){return document.getElementById(id)};
+  var stage=$("stage"), win=$("win"), page=$("page");
+
+  // timeline script, in seconds. Page coordinates are 1280x720.
+  var LOOP = 14.5, LEVEL = 2, IN = .3, OUT = .4;
+  var REG = [{s:1.3,e:4.6,x:530,y:200},{s:5.7,e:9.0,x:540,y:310},{s:10.1,e:13.4,x:372,y:512}];
+  var CLICKS = [1.3,5.7,10.1];
+  var EVTS = [1.3,1.7,2.5,3.3,5.7,6.1,6.9,10.1];
+  var PATH = [[0,1040,110],[1.25,530,200],[4.8,530,200],[5.65,540,310],[9.0,540,310],[10.05,372,512],[13.6,372,512],[14.5,1040,110]];
+  var T1="Harbor & Pine Studio", T2="4,800.00";
+
+  var clamp=function(v,a,b){return Math.max(a,Math.min(b,v))};
+  var ease=function(t){return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+  function cursorAt(t){
+    for(var i=1;i<PATH.length;i++){
+      var a=PATH[i-1],b=PATH[i];
+      if(t<=b[0]){var k=ease(clamp((t-a[0])/(b[0]-a[0]),0,1));return [a[1]+(b[1]-a[1])*k,a[2]+(b[2]-a[2])*k]}
+    }
+    var l=PATH[PATH.length-1];return [l[1],l[2]];
+  }
+  function zoomAt(t){
+    var best=null,env=0;
+    for(var i=0;i<REG.length;i++){var r=REG[i];
+      if(t<r.s||t>r.e)continue;
+      env=ease(clamp(Math.min((t-r.s)/IN,(r.e-t)/OUT,1),0,1));best=r;
+    }
+    return best?{z:1+(LEVEL-1)*env,x:best.x,y:best.y}:{z:1,x:640,y:360};
+  }
+
+  // state
+  var zoomOn=true, playing=true, t0=performance.now(), base=0, cur=0, visible=true, bgIdx=0;
+  var reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function layout(){
+    var W=stage.clientWidth,H=stage.clientHeight,small=W<600,pad=small?Math.round(W*.025):Math.round(Math.min(W,H)*.06),padY=small?40:pad;
+    var fit=Math.min((W-2*pad)/1280,(H-2*padY)/720);
+    var w=1280*fit,h=720*fit;
+    win.style.width=w+"px";win.style.height=h+"px";win.style.left=(W-w)/2+"px";win.style.top=(H-h)/2+"px";
+    stage._fit=fit;
+  }
+
+  var last={};
+  function setText(id,v){if(last[id]!==v){last[id]=v;$(id).textContent=v}}
+  function render(t){
+    var fit=stage._fit||1, z=zoomOn?zoomAt(t):{z:1,x:640,y:360};
+    var sw=1280/z.z, sh=720/z.z;
+    var sx=clamp(z.x-sw/2,0,1280-sw), sy=clamp(z.y-sh/2,0,720-sh);
+    page.style.transform="scale("+(fit*z.z)+") translate("+(-sx)+"px,"+(-sy)+"px)";
+
+    var c=cursorAt(t);
+    $("cur").style.transform="translate("+(c[0]-4)+"px,"+(c[1]-3)+"px)";
+    var ring=$("ring"),rk=-1;
+    for(var i=0;i<CLICKS.length;i++){if(t>=CLICKS[i]&&t<CLICKS[i]+.6)rk=(t-CLICKS[i])/.6}
+    if(rk>=0){ring.style.opacity=String(1-rk);ring.style.left=c[0]+"px";ring.style.top=c[1]+"px";ring.style.transform="scale("+(.4+rk*1.1)+")"}
+    else ring.style.opacity="0";
+
+    var n1=t<1.7?0:Math.floor(clamp((t-1.7)/2,0,1)*T1.length), n2=t<6.1?0:Math.floor(clamp((t-6.1)/1.2,0,1)*T2.length);
+    var s1=T1.slice(0,n1), s2=T2.slice(0,n2);
+    setText("t1",s1);setText("t2",s2);
+    var f1=t>=1.3&&t<5.7, f2=t>=5.7&&t<10.1, blink=Math.floor(t*2)%2===0;
+    $("f1").classList.toggle("focus",f1);$("f2").classList.toggle("focus",f2);
+    $("c1").style.display=f1&&blink?"inline-block":"none";$("c2").style.display=f2&&blink?"inline-block":"none";
+    var sent=t>=10.1;
+    setText("btn",sent?"Sent":"Send invoice");$("btn").classList.toggle("sent",sent);
+    setText("pv1",s1||"Client name");setText("pv2",s2?"$"+s2:"$0.00");
+    setText("pb",sent?"Sent":"Draft");$("pb").classList.toggle("sent",sent);
+
+    // viewfinder brackets contract as the zoom deepens
+    var k=Math.round(12+(z.z-1)*10)+"px";
+    ["b1","b2","b3","b4"].forEach(function(id,i){var e=$(id);e.style.top=i<2?k:"";e.style.bottom=i>=2?k:"";e.style.left=(i%2===0)?k:"";e.style.right=(i%2===1)?k:""});
+    $("head").style.left=(t/LOOP*100)+"%";
+    var m=Math.floor(t/60),s=(t%60).toFixed(1);
+    setText("rec","REC "+String(m).padStart(2,"0")+":"+(s<10?"0":"")+s);
+  }
+
+  function frame(now){
+    if(playing&&visible){cur=(base+(now-t0)/1000)%LOOP}
+    if(playing&&visible)render(cur);
+    requestAnimationFrame(frame);
+  }
+  function pause(){playing=false;$("playBtn").textContent="Play";base=cur}
+  function play(){playing=true;$("playBtn").textContent="Pause";t0=performance.now()}
+  $("playBtn").addEventListener("click",function(){playing?pause():play()});
+  function setZoom(on){
+    zoomOn=on;$("zmAuto").setAttribute("aria-pressed",String(on));$("zmNorm").setAttribute("aria-pressed",String(!on));
+    $("tl").classList.toggle("off",!on);render(cur);
+  }
+  $("zmAuto").addEventListener("click",function(){setZoom(true)});
+  $("zmNorm").addEventListener("click",function(){setZoom(false)});
+
+  // background swatches
+  function paintBg(i){var b=BG[i];stage.style.background="linear-gradient(to bottom right,"+b[1]+","+b[2]+")"}
+  var swEl=$("sw");
+  BG.forEach(function(b,i){
+    var btn=document.createElement("button");btn.type="button";btn.title=b[0];btn.setAttribute("aria-label",b[0]+" background");
+    btn.style.background="linear-gradient(to bottom right,"+b[1]+","+b[2]+")";btn.setAttribute("aria-pressed",i===0?"true":"false");
+    btn.addEventListener("click",function(){
+      bgIdx=i;paintBg(i);$("bgName").textContent=b[0];[].forEach.call(swEl.children,function(c,j){c.setAttribute("aria-pressed",j===i?"true":"false")});
+    });
+    swEl.appendChild(btn);
+  });
+  var msw=$("msw");
+  BG.forEach(function(b,i){var e=document.createElement("button");e.type="button";e.tabIndex=-1;e.setAttribute("aria-pressed",i===2?"true":"false");
+    e.style.background="linear-gradient(to bottom right,"+b[1]+","+b[2]+")";msw.appendChild(e)});
+
+  // timeline marks
+  EVTS.forEach(function(t){var i=document.createElement("i");i.style.left=(t/LOOP*100)+"%";$("ticks").appendChild(i)});
+  REG.forEach(function(r){var b=document.createElement("div");b.className="blk";
+    b.style.left=(r.s/LOOP*100)+"%";b.style.width=((r.e-r.s)/LOOP*100)+"%";b.textContent="2.0×";$("track").appendChild(b)});
+
+  // static studio mock timeline (21 s recording)
+  var M=21, MR=[[1.4,4.7,"2.0×"],[5.7,9.0,"2.4×",1],[11.2,14.5,"2.0×"],[16.6,19.9,"1.8×"]], ME=[1.4,1.9,2.7,5.7,6.2,7.0,11.2,12.0,16.6,17.4];
+  ME.forEach(function(t){var i=document.createElement("i");i.style.left=(t/M*100)+"%";$("mticks").appendChild(i)});
+  MR.forEach(function(r){var b=document.createElement("div");b.className="blk"+(r[3]?" sel":"");
+    b.style.left=(r[0]/M*100)+"%";b.style.width=((r[1]-r[0])/M*100)+"%";b.textContent=r[2];$("mtrack").appendChild(b)});
+
+  if("IntersectionObserver" in window){
+    new IntersectionObserver(function(es){visible=es[0].isIntersecting;if(visible&&playing)t0=performance.now(),base=cur},{threshold:0}).observe(stage);
+  }
+  if("ResizeObserver" in window)new ResizeObserver(function(){layout();render(cur)}).observe(stage);
+  layout();
+  if(reduce){cur=2.6;pause();render(cur)}else{render(0)}
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
